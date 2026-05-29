@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 import { TrendingUp, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {

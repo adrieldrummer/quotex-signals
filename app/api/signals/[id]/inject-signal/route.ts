@@ -1,6 +1,6 @@
 // Webhook público — bridge Python chama aqui sem JWT, valida com secret
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase/server';
 import { injectSignal } from '@/lib/orchestrator';
 
 export const runtime = 'nodejs';

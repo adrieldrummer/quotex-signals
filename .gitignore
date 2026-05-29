@@ -13,3 +13,5 @@ bridge/__pycache__/
 bridge/venv/
 bridge/.env
 bridge/bridge.log
+
+.vercel

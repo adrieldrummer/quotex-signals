@@ -1,7 +1,7 @@
 // Orquestrador stateless — chamado pelo cron e pelo webhook.
 // Usa supabaseAdmin (service_role) pra ler/escrever ignorando RLS.
 
-import { supabaseAdmin } from './supabase';
+import { supabaseAdmin } from './supabase/server';
 import { getCandles, getRealtimePrice, normalizeSymbol } from './marketData';
 import { analyze } from './ta';
 import { renderResultPng } from './printGen';

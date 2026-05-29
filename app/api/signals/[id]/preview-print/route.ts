@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase';
+import { supabaseServer } from '@/lib/supabase/server';
 import { renderResultPng } from '@/lib/printGen';
 
 export const runtime = 'nodejs';
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     openTime: new Date(Date.now() - 60_000),
     closingTime: new Date(),
   });
-  return new NextResponse(png, {
+  return new NextResponse(new Uint8Array(png), {
     headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' },
   });
 }

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 import {
   TrendingUp, Plus, Trash2, Loader2, X, Settings, Activity, CheckCircle2,
   XCircle, Zap, Clock, Image as ImageIcon, Sparkles, Radio, Webhook, Copy,

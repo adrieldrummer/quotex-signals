@@ -19,7 +19,7 @@ export async function sendPhoto(token: string, chat_id: number | string, photoBu
   form.append('caption', caption);
   if (opts.parse_mode !== null) form.append('parse_mode', opts.parse_mode || 'Markdown');
   if (opts.reply_markup) form.append('reply_markup', JSON.stringify(opts.reply_markup));
-  const blob = new Blob([photoBuffer], { type: 'image/png' });
+  const blob = new Blob([new Uint8Array(photoBuffer)], { type: 'image/png' });
   form.append('photo', blob, 'signal.png');
   const r = await fetch(`${API}${token}/sendPhoto`, { method: 'POST', body: form });
   const j = await r.json();

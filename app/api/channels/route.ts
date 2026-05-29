@@ -1,6 +1,6 @@
 // Lista canais + conecta novo canal (valida via Telegram getChat)
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase';
+import { supabaseServer } from '@/lib/supabase/server';
 import { getChat } from '@/lib/telegram';
 
 export const runtime = 'nodejs';

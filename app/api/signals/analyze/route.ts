@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase';
+import { supabaseServer } from '@/lib/supabase/server';
 import { getCandles } from '@/lib/marketData';
 import { analyze } from '@/lib/ta';
 

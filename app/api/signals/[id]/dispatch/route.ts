@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase';
+import { supabaseServer } from '@/lib/supabase/server';
 import { runSession } from '@/lib/orchestrator';
 
 export const runtime = 'nodejs';

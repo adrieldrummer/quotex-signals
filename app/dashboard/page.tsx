@@ -1,11 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase/browser';
 import {
   TrendingUp, Plus, Trash2, Loader2, X, Settings, Activity, CheckCircle2,
   XCircle, Zap, Clock, Image as ImageIcon, Sparkles, Radio, Webhook, Copy,
-  Wifi, WifiOff, Terminal, DollarSign, LogOut, Cog,
+  Wifi, WifiOff, Terminal, DollarSign, Cog,
 } from 'lucide-react';
 
 const DEFAULT_PAIRS = ['EUR/USD','GBP/USD','USD/JPY','AUD/USD','EUR/JPY','EUR/GBP','USD/CAD','AUD/CAD'];
@@ -19,7 +17,6 @@ async function api(path: string, opts: RequestInit = {}) {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const [rooms, setRooms] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [ws, setWs] = useState<any>(null);
@@ -48,10 +45,6 @@ export default function DashboardPage() {
     if (!confirm('Apagar essa sala?')) return;
     await api(`/signals/${id}`, { method: 'DELETE' }); reload();
   }
-  async function logout() {
-    await supabaseBrowser().auth.signOut();
-    router.push('/login');
-  }
 
   return (
     <div className="min-h-screen">
@@ -64,9 +57,6 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <button onClick={() => setShowSettings(true)} className="p-2 text-gray-400 hover:text-white" title="Configurações">
               <Cog size={18} />
-            </button>
-            <button onClick={logout} className="p-2 text-gray-400 hover:text-white" title="Sair">
-              <LogOut size={18} />
             </button>
             <button onClick={() => setEditing('new')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white rounded-lg font-semibold text-sm">
               <Plus size={14} /> Nova sala

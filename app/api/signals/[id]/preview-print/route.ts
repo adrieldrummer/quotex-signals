@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
 import { renderResultPng } from '@/lib/printGen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const sb = supabaseServer();
-  const { data: u } = await sb.auth.getUser();
-  if (!u.user) return NextResponse.json({ error: 'auth' }, { status: 401 });
-
   const sp = req.nextUrl.searchParams;
   const png = await renderResultPng({
     pair: sp.get('pair') || 'AUD/USD OTC',

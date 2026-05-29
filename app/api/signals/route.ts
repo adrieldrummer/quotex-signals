@@ -1,20 +1,17 @@
-// GET lista, POST cria sala
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/server';
+import { workspaceId } from '@/lib/workspace';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const sb = supabaseServer();
-  const { data: user } = await sb.auth.getUser();
-  if (!user.user) return NextResponse.json({ error: 'auth' }, { status: 401 });
-
+  const sb = supabaseAdmin();
   const { data } = await sb
     .from('signal_rooms')
     .select('*, channels(title, username), signal_room_bridge_state(last_seen, status, account_balance, signals_today, signals_today_date)')
+    .eq('workspace_id', workspaceId())
     .order('created_at', { ascending: false });
-
   const now = Date.now();
   const rooms = (data || []).map((r: any) => {
     const bs = Array.isArray(r.signal_room_bridge_state) ? r.signal_room_bridge_state[0] : r.signal_room_bridge_state;
@@ -32,17 +29,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const sb = supabaseServer();
-  const { data: u } = await sb.auth.getUser();
-  if (!u.user) return NextResponse.json({ error: 'auth' }, { status: 401 });
-
-  // workspace do usuário
-  const { data: ws } = await sb.from('workspaces').select('id').eq('owner_id', u.user.id).limit(1).single();
-  if (!ws) return NextResponse.json({ error: 'workspace não encontrado' }, { status: 400 });
-
+  const sb = supabaseAdmin();
   const body = await req.json();
   const insert: any = {
-    workspace_id: ws.id,
+    workspace_id: workspaceId(),
     channel_id: body.channel_id || null,
     name: body.name || 'Sala VIP',
     mode: body.mode || 'simulated',
@@ -63,7 +53,6 @@ export async function POST(req: Request) {
     ai_prompt: body.ai_prompt || null,
     is_active: body.is_active !== false,
   };
-
   const { data, error } = await sb.from('signal_rooms').insert(insert).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);

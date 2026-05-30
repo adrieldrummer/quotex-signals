@@ -1,7 +1,35 @@
 // Print estilo da plataforma Quotex (chart + side panel) — pareçe screenshot real
 import sharp from 'sharp';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 const W = 1100, H = 700;
+
+// Embute fonte Inter no SVG (Vercel não tem Arial)
+let FONT_REGULAR_B64 = '';
+let FONT_BOLD_B64 = '';
+try {
+  FONT_REGULAR_B64 = readFileSync(join(process.cwd(), 'lib/fonts/Inter-Regular.ttf')).toString('base64');
+  FONT_BOLD_B64 = readFileSync(join(process.cwd(), 'lib/fonts/Inter-Bold.ttf')).toString('base64');
+} catch (e) {
+  console.warn('[platformPrint] fontes não carregaram:', e);
+}
+
+const FONT_STYLE = `
+<style>
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  src: url('data:font/ttf;base64,${FONT_REGULAR_B64}') format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-weight: 700;
+  src: url('data:font/ttf;base64,${FONT_BOLD_B64}') format('truetype');
+}
+text { font-family: 'Inter', sans-serif; }
+</style>
+`;
 
 export type PlatformPrintOpts = {
   pair: string;            // ex "CAD/JPY (OTC)"
@@ -52,6 +80,7 @@ function buildSvg(o: PlatformPrintOpts) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
+    ${FONT_STYLE}
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0d1325"/><stop offset="100%" stop-color="#070a17"/>
     </linearGradient>

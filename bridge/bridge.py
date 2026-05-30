@@ -274,6 +274,87 @@ async def analyze_pair(client: Quotex, pair: str):
     if sent:
         with state_lock:
             last_signal_at[pair] = now
+        # Executa operação REAL na Quotex e reporta resultado
+        asyncio.create_task(execute_real_trade(client, pair, sig, entry_price))
+
+
+async def execute_real_trade(client, pair: str, direction: str, entry_price: float):
+    """
+    Coloca trade real na Quotex (DEMO), espera expirar, busca resultado,
+    e POSTa pro endpoint /trade-result que gera print + posta no Telegram.
+    """
+    import random
+    try:
+        # Investment aleatório dentro da faixa configurada
+        investment_min = env("INVESTMENT_MIN", 20, int)
+        investment_max = env("INVESTMENT_MAX", 50, int)
+        amount = random.randint(investment_min, investment_max)
+        duration = 60  # M1 — 1 minuto
+        action = "call" if direction == "CALL" else "put"
+
+        log.info(f"💰 [{pair}] colocando trade real: ${amount} {action} {duration}s")
+        status, buy_info = await client.buy(amount, pair, action, duration)
+        if not status:
+            log.warning(f"[{pair}] buy retornou status False: {buy_info}")
+            return
+
+        trade_id = buy_info.get("id") if isinstance(buy_info, dict) else None
+        log.info(f"✅ [{pair}] trade colocado id={trade_id}, aguardando {duration}s expirar...")
+
+        # Aguarda a operação expirar
+        await asyncio.sleep(duration + 5)
+
+        # Busca resultado real
+        try:
+            win_result = await client.check_win(trade_id) if trade_id else None
+            # win_result vem como dict com {profitAmount, win, etc} ou apenas bool
+            if isinstance(win_result, dict):
+                profit_real = float(win_result.get("profitAmount", 0))
+                won = win_result.get("win", profit_real > 0)
+            elif isinstance(win_result, (int, float)):
+                profit_real = float(win_result)
+                won = profit_real > 0
+            else:
+                profit_real = float(buy_info.get("profit", amount * 0.85)) if buy_info else amount * 0.85
+                won = bool(win_result)
+        except Exception as e:
+            log.warning(f"[{pair}] check_win falhou ({e}) — assumindo pelo preço")
+            current = await client.get_realtime_price(pair) if hasattr(client, 'get_realtime_price') else entry_price
+            won = (current > entry_price) if direction == "CALL" else (current < entry_price)
+            profit_real = amount * 0.85 if won else -amount
+
+        result_label = "WIN" if won else "LOSS"
+        final_profit = profit_real if won else -amount
+        log.info(f"🏁 [{pair}] resultado: {result_label} profit={final_profit:.2f}")
+
+        # Posta resultado no backend (que gera print + manda no Telegram)
+        try:
+            requests.post(webhook_url("trade-result"), json={
+                "secret": ROOM_SECRET,
+                "pair": format_pair_for_label(pair),
+                "direction": direction,
+                "investment": amount,
+                "payout": 85,
+                "result": result_label,
+                "profit": final_profit,
+                "open_price": entry_price,
+                "close_price": await get_safe_price(client, pair, entry_price),
+                "quotex_trade_id": str(trade_id) if trade_id else None,
+                "expiration_minutes": 1,
+            }, timeout=20)
+        except Exception as e:
+            log.error(f"[{pair}] trade-result POST falhou: {e}")
+    except Exception as e:
+        log.error(f"[{pair}] execute_real_trade ERRO: {e}")
+
+
+async def get_safe_price(client, pair: str, fallback: float) -> float:
+    try:
+        if hasattr(client, 'get_realtime_price'):
+            p = await client.get_realtime_price(pair)
+            if p: return float(p)
+    except Exception: pass
+    return fallback
 
 
 async def main_loop():

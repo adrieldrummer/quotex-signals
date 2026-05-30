@@ -1,4 +1,4 @@
-// Heartbeat do bridge Python (sem JWT, valida com secret)
+// Heartbeat do bridge Python — atualiza bridge_state + workspace_assets.
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/server';
 
@@ -8,11 +8,19 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    const { secret, status, version, account_balance, account_email, account_type, pairs_watching, last_error } = body || {};
+    const {
+      secret, status, version,
+      account_balance, account_email, account_type,
+      pairs_watching, assets, last_error,
+    } = body || {};
     if (!secret) return NextResponse.json({ error: 'secret obrigatório' }, { status: 401 });
 
     const sb = supabaseAdmin();
-    const { data: room } = await sb.from('signal_rooms').select('id, webhook_secret').eq('id', params.id).maybeSingle();
+    const { data: room } = await sb
+      .from('signal_rooms')
+      .select('id, workspace_id, webhook_secret')
+      .eq('id', params.id)
+      .maybeSingle();
     if (!room) return NextResponse.json({ error: 'sala não encontrada' }, { status: 404 });
     if (room.webhook_secret !== secret) return NextResponse.json({ error: 'secret inválido' }, { status: 403 });
 
@@ -35,6 +43,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       signals_today_date: today,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'room_id' });
+
+    // Atualiza cache de ativos por workspace
+    if (Array.isArray(assets) && assets.length > 0) {
+      await sb.from('workspace_assets').upsert({
+        workspace_id: room.workspace_id,
+        assets,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id' });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

@@ -70,6 +70,11 @@ for k, v in [("QUOTEX_EMAIL", QUOTEX_EMAIL), ("QUOTEX_PASSWORD", QUOTEX_PASSWORD
 # ============================================================
 # LOGGING
 # ============================================================
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -93,14 +98,49 @@ def webhook_url(path: str) -> str:
     return f"{WEBHOOK_BASE_URL}/api/signals/{ROOM_ID}/{path}"
 
 
-def send_heartbeat(client, status: str = "online"):
+def categorize_asset(symbol: str, kind: str) -> str:
+    s = symbol.lower()
+    if "_otc" in s: return "OTC"
+    if kind == "cryptocurrency": return "Cripto"
+    if kind == "stock" or "-" in symbol and "_otc" not in s: return "Ações"
+    return "Forex"
+
+
+async def fetch_assets_snapshot(client) -> list:
+    """Pega lista de TODOS os ativos da Quotex com status atual."""
+    try:
+        all_assets = await client.get_all_assets() if hasattr(client, 'get_all_assets') else None
+        if not all_assets:
+            return []
+        out = []
+        for sym, info in all_assets.items():
+            # info varia de versao, tentamos extrair com fallbacks
+            try:
+                # pyquotex >=1: dict com {nome, tipo, payout, is_open}
+                name = info.get("name") if isinstance(info, dict) else None
+                kind = info.get("type", "") if isinstance(info, dict) else ""
+                payout = info.get("payout", 0) if isinstance(info, dict) else 0
+                is_open = info.get("is_open", False) if isinstance(info, dict) else False
+                out.append({
+                    "symbol": sym,
+                    "name": name or sym,
+                    "category": categorize_asset(sym, kind),
+                    "is_open": bool(is_open),
+                    "payout": int(payout) if payout else 0,
+                })
+            except Exception:
+                continue
+        return out
+    except Exception as e:
+        log.debug(f"fetch_assets falhou: {e}")
+        return []
+
+
+async def send_heartbeat(client, status: str = "online"):
     """Reporta estado pro backend pra aparecer no dashboard."""
     try:
-        balance = None
-        try:
-            balance = client.get_balance() if client else None
-        except Exception:
-            pass
+        balance = await get_balance_safe(client) if client else None
+        assets = await fetch_assets_snapshot(client) if client else []
         payload = {
             "secret": ROOM_SECRET,
             "status": status,
@@ -109,9 +149,10 @@ def send_heartbeat(client, status: str = "online"):
             "account_email": QUOTEX_EMAIL,
             "account_type": QUOTEX_ACCOUNT_TYPE,
             "pairs_watching": PAIRS,
+            "assets": assets,
             "last_error": last_error,
         }
-        r = requests.post(webhook_url("heartbeat"), json=payload, timeout=10)
+        r = requests.post(webhook_url("heartbeat"), json=payload, timeout=15)
         if not r.ok:
             log.warning(f"heartbeat http {r.status_code}: {r.text[:200]}")
     except Exception as e:
@@ -160,10 +201,15 @@ async def connect_quotex() -> Quotex:
     check, reason = await client.connect()
     if not check:
         raise RuntimeError(f"login falhou: {reason}")
-    client.change_account(QUOTEX_ACCOUNT_TYPE)
-    bal = client.get_balance()
+    await client.change_account(QUOTEX_ACCOUNT_TYPE)
+    bal = await client.get_balance()
     log.info(f"✅ conectado — saldo {bal} ({QUOTEX_ACCOUNT_TYPE})")
     return client
+
+
+async def get_balance_safe(client: Quotex):
+    try: return await client.get_balance()
+    except Exception: return None
 
 
 async def fetch_candles(client: Quotex, pair: str, period: int, count: int) -> List[Dict]:
@@ -236,7 +282,7 @@ async def main_loop():
         try:
             if client is None:
                 client = await connect_quotex()
-                send_heartbeat(client, "online")
+                await send_heartbeat(client, "online")
 
             # Analisa cada par em sequência (pra não saturar o ws)
             for pair in PAIRS:
@@ -244,19 +290,19 @@ async def main_loop():
                 await asyncio.sleep(1)
 
             # Heartbeat periódico
-            send_heartbeat(client, "online")
+            await send_heartbeat(client, "online")
             # Aguarda próximo ciclo (5s entre rodadas — ajuste se quiser mais agressivo)
             await asyncio.sleep(5)
 
         except KeyboardInterrupt:
             log.info("encerrando...")
-            send_heartbeat(client, "stopped")
+            await send_heartbeat(client, "stopped")
             return
         except Exception as e:
             log.exception("erro no loop principal — reconectando em 30s")
             global last_error
             last_error = str(e)[:500]
-            send_heartbeat(None, "error")
+            await send_heartbeat(None, "error")
             client = None
             await asyncio.sleep(30)
 

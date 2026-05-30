@@ -23,6 +23,10 @@ import requests
 from dotenv import load_dotenv
 
 from indicators import analyze
+from screenshotter import QuotexScreenshotter
+
+# Screenshotter global (Patchright sessao sempre viva)
+SCREENSHOTTER: 'QuotexScreenshotter | None' = None
 
 # pyquotex import — só importamos quando precisar, pra mensagem de erro ser clara
 try:
@@ -278,6 +282,28 @@ async def analyze_pair(client: Quotex, pair: str):
         asyncio.create_task(execute_real_trade(client, pair, sig, entry_price))
 
 
+async def upload_screenshot(png_bytes: bytes, pair: str, direction: str, investment: int,
+                             result: str = "PENDING", profit: float = 0.0):
+    """Sobe PNG real do Patchright pro endpoint -> Telegram."""
+    try:
+        files = {"screenshot": (f"qx_{pair}_{int(time.time())}.png", png_bytes, "image/png")}
+        data = {
+            "secret": ROOM_SECRET,
+            "pair": format_pair_for_label(pair),
+            "direction": direction,
+            "investment": str(investment),
+            "result": result,
+            "profit": str(profit),
+        }
+        r = requests.post(webhook_url("upload-screenshot"), data=data, files=files, timeout=30)
+        if r.ok:
+            log.info(f"📸 screenshot enviado: {r.json()}")
+        else:
+            log.warning(f"upload screenshot http {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        log.error(f"upload screenshot ERRO: {e}")
+
+
 async def execute_real_trade(client, pair: str, direction: str, entry_price: float):
     """
     Coloca trade real na Quotex (DEMO), espera expirar, busca resultado,
@@ -300,6 +326,13 @@ async def execute_real_trade(client, pair: str, direction: str, entry_price: flo
 
         trade_id = buy_info.get("id") if isinstance(buy_info, dict) else None
         log.info(f"✅ [{pair}] trade colocado id={trade_id}, aguardando {duration}s expirar...")
+
+        # SCREENSHOT REAL #1 — entrada (operacao aparecendo na sidebar)
+        if SCREENSHOTTER and SCREENSHOTTER._ready:
+            await asyncio.sleep(2)  # dá tempo do trade aparecer na UI
+            png = await SCREENSHOTTER.snap(asset=pair)
+            if png:
+                await upload_screenshot(png, pair, direction, amount, result="PENDING")
 
         # Aguarda a operação expirar
         await asyncio.sleep(duration + 5)
@@ -327,6 +360,20 @@ async def execute_real_trade(client, pair: str, direction: str, entry_price: flo
         final_profit = profit_real if won else -amount
         log.info(f"🏁 [{pair}] resultado: {result_label} profit={final_profit:.2f}")
 
+        # SCREENSHOT REAL #2 — resultado final (mostra na plataforma)
+        if SCREENSHOTTER and SCREENSHOTTER._ready:
+            await asyncio.sleep(2)
+            png = await SCREENSHOTTER.snap(asset=pair)
+            if png:
+                await upload_screenshot(png, pair, direction, amount,
+                                        result=result_label, profit=final_profit)
+            else:
+                # fallback: SVG mock se screenshot real falhar
+                _post_trade_result_fallback(pair, direction, amount, result_label, final_profit, entry_price)
+        else:
+            _post_trade_result_fallback(pair, direction, amount, result_label, final_profit, entry_price)
+        return  # ja tratamos
+
         # Posta resultado no backend (que gera print + manda no Telegram)
         try:
             requests.post(webhook_url("trade-result"), json={
@@ -348,6 +395,22 @@ async def execute_real_trade(client, pair: str, direction: str, entry_price: flo
         log.error(f"[{pair}] execute_real_trade ERRO: {e}")
 
 
+def _post_trade_result_fallback(pair, direction, amount, result_label, profit, entry_price):
+    """Fallback se Patchright falhar — usa SVG mock."""
+    try:
+        requests.post(webhook_url("trade-result"), json={
+            "secret": ROOM_SECRET,
+            "pair": format_pair_for_label(pair),
+            "direction": direction,
+            "investment": amount, "payout": 85,
+            "result": result_label, "profit": profit,
+            "open_price": entry_price,
+            "expiration_minutes": 1,
+        }, timeout=20)
+    except Exception as e:
+        log.error(f"fallback trade-result falhou: {e}")
+
+
 async def get_safe_price(client, pair: str, fallback: float) -> float:
     try:
         if hasattr(client, 'get_realtime_price'):
@@ -358,7 +421,21 @@ async def get_safe_price(client, pair: str, fallback: float) -> float:
 
 
 async def main_loop():
+    global SCREENSHOTTER
     client = None
+
+    # Inicia Patchright em paralelo (pra screenshots reais)
+    USE_SCREENSHOTTER = env("USE_SCREENSHOTTER", "1") == "1"
+    if USE_SCREENSHOTTER:
+        try:
+            log.info("🌐 Iniciando Patchright (screenshotter)...")
+            SCREENSHOTTER = QuotexScreenshotter(QUOTEX_EMAIL, QUOTEX_PASSWORD, QUOTEX_ACCOUNT_TYPE)
+            ok = await SCREENSHOTTER.start()
+            log.info(f"   screenshotter ready={ok}")
+        except Exception as e:
+            log.warning(f"Patchright start falhou (fallback mock): {e}")
+            SCREENSHOTTER = None
+
     while True:
         try:
             if client is None:
